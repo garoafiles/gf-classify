@@ -21,7 +21,11 @@ steps:
       - apk add --no-cache git
       - git config --global user.name "Garoa Files"
       - git config --global user.email "garoafiles@garoafiles.com"
-      - git remote set-url origin "https://garoafiles:$${GITEA_TOKEN}@codeberg.org/garoafiles/gf-classify.git"
+      # semantic-release uses the clean repositoryUrl from .releaserc.json for
+      # its push (ignores any `origin` remote overrides), so we authenticate at
+      # the git-protocol layer via a throwaway .netrc.
+      - printf "machine codeberg.org\nlogin garoafiles\npassword %s\n" "$${GITEA_TOKEN}" > ~/.netrc
+      - chmod 600 ~/.netrc
       - npx --yes
           -p semantic-release
           -p @semantic-release/commit-analyzer
