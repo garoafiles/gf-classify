@@ -1,5 +1,10 @@
 # gf-classify
 
+> **Canonical repository:** <https://codeberg.org/garoafiles/gf-classify>
+>
+> The copy on GitHub is an automatic mirror — issues, PRs, and discussions
+> there are not monitored. Please file everything on Codeberg.
+
 A pure-Go, regex-only torrent classifier and layout planner.
 
 Given a torrent's display name and file list, `gf-classify` returns a category
