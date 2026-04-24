@@ -90,6 +90,14 @@ a torrent name + file list; output is a classification and a layout plan.
 Callers are responsible for directory creation, target-folder selection, and
 applying the plan.
 
+## Responsible use
+
+This library classifies torrents and plans folder layouts — it does not
+download content and takes no position on what you classify. You are
+responsible for ensuring the content you process with `gf-classify` is
+content you have the right to use, share, or redistribute under applicable
+copyright and licensing laws in your jurisdiction.
+
 ## Versioning
 
 `v0.x.y` — API may still shift between minor versions as the plugin surface
