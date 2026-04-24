@@ -32,6 +32,5 @@ steps:
           -p @semantic-release/release-notes-generator
           -p @semantic-release/changelog
           -p @semantic-release/git
-          -p @saithodev/semantic-release-gitea
           semantic-release
     depends_on: [test]
