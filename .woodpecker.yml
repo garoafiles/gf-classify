@@ -21,7 +21,7 @@ steps:
       - apk add --no-cache git
       - git config --global user.name "Garoa Files"
       - git config --global user.email "garoafiles@garoafiles.com"
-      - git remote set-url origin "https://x-access-token:$${GITEA_TOKEN}@codeberg.org/garoafiles/gf-classify.git"
+      - git remote set-url origin "https://garoafiles:$${GITEA_TOKEN}@codeberg.org/garoafiles/gf-classify.git"
       - npx --yes
           -p semantic-release
           -p @semantic-release/commit-analyzer
