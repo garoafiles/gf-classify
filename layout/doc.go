@@ -5,7 +5,7 @@
 // file list; it returns a Plan describing whether to wrap the files in a
 // new directory and whether to strip a redundant top-level segment.
 //
-// The package depends on github.com/garoafiles/gf-classify for its Sanitize
+// The package depends on codeberg.org/garoafiles/gf-classify for its Sanitize
 // and FuzzyEqual helpers, which are the same rules used by the root
 // Classify function. Using the same rules here means the wrapper-name
 // comparison in Collapse behaves identically to Classify's own name

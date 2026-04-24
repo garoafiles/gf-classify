@@ -3,7 +3,7 @@ package layout
 import (
 	"strings"
 
-	classify "github.com/garoafiles/gf-classify"
+	classify "codeberg.org/garoafiles/gf-classify"
 )
 
 // Plan describes the directory layout to apply under a caller-selected

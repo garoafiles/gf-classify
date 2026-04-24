@@ -3,7 +3,7 @@ package layout
 import (
 	"testing"
 
-	classify "github.com/garoafiles/gf-classify"
+	classify "codeberg.org/garoafiles/gf-classify"
 )
 
 func TestCollapseHappyPath(t *testing.T) {

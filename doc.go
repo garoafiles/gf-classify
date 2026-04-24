@@ -11,5 +11,5 @@
 // would match the movie year regex but belongs under TV.
 //
 // For directory-layout decisions on multi-file torrents, see the sibling
-// package github.com/garoafiles/gf-classify/layout.
+// package codeberg.org/garoafiles/gf-classify/layout.
 package classify
