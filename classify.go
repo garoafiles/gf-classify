@@ -164,14 +164,19 @@ func firstTVMatch(s string) []int {
 	return best
 }
 
-// detectMovies needs both a 4-digit year in the name AND ≥50% video files.
-// Title = substring before the first year.
+// detectMovies needs both a 4-digit year in the name AND video as the
+// dominant content by SIZE. Movies routinely ship as one large .mkv plus
+// a handful of small companion files (.nfo, .srt, sample, screens) — by
+// count, video is a minority; by bytes, it dominates. Counting by size
+// catches both that case and the single-file variant. Title is the
+// substring before the first year. See codeberg issue #1 for the
+// regression this fixes (v0.2.1).
 func detectMovies(sanitized string, files []File) (title, year string, ok bool) {
 	m := reYearAny.FindStringIndex(sanitized)
 	if m == nil {
 		return "", "", false
 	}
-	if !majorityExt(files, videoExts, 0.5) {
+	if !majorityBytes(files, videoExts, 0.5) {
 		return "", "", false
 	}
 	title = strings.TrimSpace(sanitized[:m[0]])
@@ -214,7 +219,10 @@ func detectBooks(files []File) bool {
 }
 
 // majorityExt returns true if at least `threshold` of the files (by count)
-// have an extension in `set`. Threshold is a fraction in [0, 1].
+// have an extension in `set`. Threshold is a fraction in [0, 1]. Suitable
+// for album-shaped categories where every file is meaningful and roughly
+// the same size (Music, Books, Software install bundles, .nsp game dumps).
+// For one-large-file-with-companions shapes (Movies), use majorityBytes.
 func majorityExt(files []File, set map[string]struct{}, threshold float64) bool {
 	if len(files) == 0 {
 		return false
@@ -227,6 +235,31 @@ func majorityExt(files []File, set map[string]struct{}, threshold float64) bool 
 		}
 	}
 	return float64(hit)/float64(len(files)) >= threshold
+}
+
+// majorityBytes is the size-weighted equivalent of majorityExt: returns true
+// when files matching `set` account for at least `threshold` of total bytes.
+// Used for Movies, which ship as one large video plus many small companion
+// files (.nfo, .srt, samples, screens) where count-based majority misclassifies.
+// Files with non-positive SizeBytes contribute neither to the numerator nor
+// the denominator so callers passing placeholder zero-size entries get the
+// same behaviour as if they hadn't passed them.
+func majorityBytes(files []File, set map[string]struct{}, threshold float64) bool {
+	var total, hit int64
+	for _, f := range files {
+		if f.SizeBytes <= 0 {
+			continue
+		}
+		total += f.SizeBytes
+		ext := strings.ToLower(filepath.Ext(f.RelativePath))
+		if _, ok := set[ext]; ok {
+			hit += f.SizeBytes
+		}
+	}
+	if total == 0 {
+		return false
+	}
+	return float64(hit)/float64(total) >= threshold
 }
 
 // IsSingleFile reports whether the torrent is a single-file torrent. Used by

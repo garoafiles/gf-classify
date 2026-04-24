@@ -123,6 +123,57 @@ func TestClassifyMovieMultiFile(t *testing.T) {
 	}
 }
 
+// TestClassifyMovieSizeWeightedMajority: scene-style movie releases ship a
+// single huge .mkv alongside a handful of small companion files (.nfo, .srt,
+// a sample clip, screenshots). By count the .mkv is a minority — 1 of 6 —
+// but by bytes it's >99%. The count-based gate bailed and the torrent fell
+// through to Other; the size-weighted check catches it.
+func TestClassifyMovieSizeWeightedMajority(t *testing.T) {
+	res := Classify("The.Housemaid.2025.1080p.WEBRip.x264-GROUP", []File{
+		{RelativePath: "The.Housemaid.2025.1080p.WEBRip.x264-GROUP/The.Housemaid.2025.1080p.WEBRip.x264-GROUP.mkv", SizeBytes: 2_000_000_000},
+		{RelativePath: "The.Housemaid.2025.1080p.WEBRip.x264-GROUP/The.Housemaid.2025.1080p.WEBRip.x264-GROUP.nfo", SizeBytes: 4_000},
+		{RelativePath: "The.Housemaid.2025.1080p.WEBRip.x264-GROUP/The.Housemaid.2025.1080p.WEBRip.x264-GROUP.srt", SizeBytes: 80_000},
+		{RelativePath: "The.Housemaid.2025.1080p.WEBRip.x264-GROUP/Sample/sample.mkv", SizeBytes: 30_000_000},
+		{RelativePath: "The.Housemaid.2025.1080p.WEBRip.x264-GROUP/Screens/screen1.jpg", SizeBytes: 400_000},
+		{RelativePath: "The.Housemaid.2025.1080p.WEBRip.x264-GROUP/Screens/screen2.jpg", SizeBytes: 400_000},
+	})
+	if res.Category != CategoryMovies {
+		t.Fatalf("category = %q, want movies (video is 99%%+ by bytes, minority by count)", res.Category)
+	}
+	if res.Title != "The Housemaid" {
+		t.Errorf("title = %q, want %q", res.Title, "The Housemaid")
+	}
+	if res.Year != "2025" {
+		t.Errorf("year = %q, want 2025", res.Year)
+	}
+}
+
+// TestClassifyMovieReleaseSitePrefixed reproduces codeberg issue #1. The
+// "www <site> <tld> - " watermark combined with the realistic multi-file
+// release structure shipped the torrent to Other: the prefix pushed the
+// real title past the year in the sanitized form, and the count-based video
+// gate bailed. Sanitizer now strips the watermark and detectMovies weights
+// by bytes, so this lands in Movies cleanly.
+func TestClassifyMovieReleaseSitePrefixed(t *testing.T) {
+	res := Classify("www UIndex org - The Housemaid 2025 1080p WEBRip 5 1", []File{
+		{RelativePath: "www UIndex org - The Housemaid 2025 1080p WEBRip 5 1/The.Housemaid.2025.1080p.WEBRip.5.1.mkv", SizeBytes: 2_100_000_000},
+		{RelativePath: "www UIndex org - The Housemaid 2025 1080p WEBRip 5 1/The.Housemaid.2025.1080p.WEBRip.5.1.nfo", SizeBytes: 3_200},
+		{RelativePath: "www UIndex org - The Housemaid 2025 1080p WEBRip 5 1/The.Housemaid.2025.1080p.WEBRip.5.1.srt", SizeBytes: 72_000},
+		{RelativePath: "www UIndex org - The Housemaid 2025 1080p WEBRip 5 1/Sample/sample.mkv", SizeBytes: 30_000_000},
+		{RelativePath: "www UIndex org - The Housemaid 2025 1080p WEBRip 5 1/Screens/screen1.jpg", SizeBytes: 400_000},
+		{RelativePath: "www UIndex org - The Housemaid 2025 1080p WEBRip 5 1/Screens/screen2.jpg", SizeBytes: 400_000},
+	})
+	if res.Category != CategoryMovies {
+		t.Fatalf("category = %q, want movies (codeberg issue #1)", res.Category)
+	}
+	if res.Title != "The Housemaid" {
+		t.Errorf("title = %q, want %q (release-site prefix must be stripped)", res.Title, "The Housemaid")
+	}
+	if res.Year != "2025" {
+		t.Errorf("year = %q, want 2025", res.Year)
+	}
+}
+
 func TestClassifyMovieSingleFile(t *testing.T) {
 	res := Classify("Great.Movie.2019.1080p.BluRay.x264-YIFY", []File{
 		{RelativePath: "Great.Movie.2019.1080p.BluRay.x264-YIFY.mp4", SizeBytes: 2e9},
