@@ -1,3 +1,10 @@
+# [0.3.0](https://codeberg.org/garoafiles/gf-classify/compare/v0.2.1...v0.3.0) (2026-04-27)
+
+
+### Features
+
+* **classify:** honour MimeType for video/audio majority ([6af5ea3](https://codeberg.org/garoafiles/gf-classify/commit/6af5ea31ff1ae65ba3670270b752039a4aa06596))
+
 ## [0.2.1](https://codeberg.org/garoafiles/gf-classify/compare/v0.2.0...v0.2.1) (2026-04-24)
 
 
