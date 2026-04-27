@@ -263,6 +263,108 @@ func TestClassifyOtherFallback(t *testing.T) {
 	}
 }
 
+// TestClassifyMovieMimeOnly: cloud-rewritten name with no extension but a
+// video MIME type. Year is in the display name, so the year gate is
+// satisfied; majorityBytes must accept the file via MIME prefix even
+// though the extension table doesn't know it.
+func TestClassifyMovieMimeOnly(t *testing.T) {
+	res := Classify("Great Movie 2019", []File{
+		{RelativePath: "asset-uuid-1234", SizeBytes: 2e9, MimeType: "video/mp4"},
+	})
+	if res.Category != CategoryMovies {
+		t.Fatalf("category = %q, want movies (MIME video/* should drive detection)", res.Category)
+	}
+	if res.Year != "2019" {
+		t.Errorf("year = %q, want 2019", res.Year)
+	}
+	if res.Title != "Great Movie" {
+		t.Errorf("title = %q, want %q", res.Title, "Great Movie")
+	}
+}
+
+// TestClassifyMovieOctetStreamFallsBackToExt: cloud emits the generic
+// application/octet-stream sniff but the file still has a real video
+// extension. Extension wins; result is Movies. This is the most common
+// shape for cloud-stored .mkv files.
+func TestClassifyMovieOctetStreamFallsBackToExt(t *testing.T) {
+	res := Classify("Great Movie 2019", []File{
+		{RelativePath: "Great.Movie.2019.mkv", SizeBytes: 2e9, MimeType: "application/octet-stream"},
+	})
+	if res.Category != CategoryMovies {
+		t.Fatalf("category = %q, want movies (extension must still win when MIME is generic)", res.Category)
+	}
+}
+
+// TestClassifyMusicMimeOnly: extensionless audio file, MIME audio/mpeg.
+// Music detection has no year requirement, so MIME alone is sufficient.
+func TestClassifyMusicMimeOnly(t *testing.T) {
+	res := Classify("Various Hits", []File{
+		{RelativePath: "track-1", SizeBytes: 5e6, MimeType: "audio/mpeg"},
+		{RelativePath: "track-2", SizeBytes: 5e6, MimeType: "audio/mpeg"},
+	})
+	if res.Category != CategoryMusic {
+		t.Fatalf("category = %q, want music", res.Category)
+	}
+}
+
+// TestClassifyMimeIgnoredWhenEmpty confirms backwards compat: a File with
+// no MimeType behaves identically to pre-MIME callers — the existing
+// extension-based classification still fires.
+func TestClassifyMimeIgnoredWhenEmpty(t *testing.T) {
+	res := Classify("Great.Movie.2019.1080p.BluRay.x264-YIFY", []File{
+		{RelativePath: "great.movie.2019.mkv", SizeBytes: 2e9}, // no MimeType
+	})
+	if res.Category != CategoryMovies {
+		t.Fatalf("category = %q, want movies", res.Category)
+	}
+}
+
+func TestIsVideo(t *testing.T) {
+	cases := []struct {
+		name string
+		f    File
+		want bool
+	}{
+		{"video extension", File{RelativePath: "x.mkv"}, true},
+		{"video MIME prefix", File{RelativePath: "uuid", MimeType: "video/mp4"}, true},
+		{"both ext and MIME", File{RelativePath: "x.mp4", MimeType: "video/mp4"}, true},
+		{"audio file is not video", File{RelativePath: "x.mp3", MimeType: "audio/mpeg"}, false},
+		{"plain text", File{RelativePath: "readme.txt"}, false},
+		{"empty", File{}, false},
+		{"upper-case ext", File{RelativePath: "MOVIE.MKV"}, true},
+		{"video/x-matroska prefix", File{MimeType: "video/x-matroska"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsVideo(tc.f); got != tc.want {
+				t.Errorf("IsVideo(%+v) = %v, want %v", tc.f, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsAudio(t *testing.T) {
+	cases := []struct {
+		name string
+		f    File
+		want bool
+	}{
+		{"audio extension", File{RelativePath: "x.mp3"}, true},
+		{"audio MIME prefix", File{RelativePath: "uuid", MimeType: "audio/mpeg"}, true},
+		{"flac ext", File{RelativePath: "track.flac"}, true},
+		{"video file is not audio", File{RelativePath: "x.mkv", MimeType: "video/mp4"}, false},
+		{"empty", File{}, false},
+		{"upper-case ext", File{RelativePath: "SONG.FLAC"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAudio(tc.f); got != tc.want {
+				t.Errorf("IsAudio(%+v) = %v, want %v", tc.f, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFuzzyEqual(t *testing.T) {
 	cases := []struct {
 		a, b string

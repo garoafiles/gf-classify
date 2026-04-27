@@ -21,9 +21,18 @@ const (
 
 // File is the minimal per-output-file shape callers provide. Typically one
 // entry per file in a torrent snapshot.
+//
+// MimeType is optional: pass it when the caller has a content-type header
+// (cloud-storage callers usually do; bare-torrent callers usually don't).
+// When set, a "video/" or "audio/" prefix counts as the same signal as a
+// known video/audio extension, so files with generic or stripped extensions
+// (cloud-rewritten UUIDs, application/octet-stream sniffs, etc.) still get
+// classified correctly. Empty MimeType makes the field a no-op — callers
+// that don't have the header can omit it and behaviour is unchanged.
 type File struct {
 	RelativePath string
 	SizeBytes    int64
+	MimeType     string
 }
 
 // Result is what Classify returns. Fields are filled on a best-effort,
@@ -176,7 +185,7 @@ func detectMovies(sanitized string, files []File) (title, year string, ok bool) 
 	if m == nil {
 		return "", "", false
 	}
-	if !majorityBytes(files, videoExts, 0.5) {
+	if !majorityBytes(files, IsVideo, 0.5) {
 		return "", "", false
 	}
 	title = strings.TrimSpace(sanitized[:m[0]])
@@ -187,7 +196,7 @@ func detectMovies(sanitized string, files []File) (title, year string, ok bool) 
 // detectMusic needs ≥50% audio files. Artist is an optional extraction from
 // the "Artist - Album" pattern.
 func detectMusic(sanitized string, files []File) (artist string, ok bool) {
-	if !majorityExt(files, audioExts, 0.5) {
+	if !majorityCount(files, IsAudio, 0.5) {
 		return "", false
 	}
 	if m := reArtistAlbum.FindStringSubmatch(sanitized); m != nil {
@@ -207,52 +216,80 @@ func detectGames(raw, sanitized string, files []File) bool {
 			return true
 		}
 	}
-	return majorityExt(files, gameExts, 0.5)
+	return majorityCount(files, hasExt(gameExts), 0.5)
 }
 
 func detectSoftware(files []File) bool {
-	return majorityExt(files, softExts, 0.5)
+	return majorityCount(files, hasExt(softExts), 0.5)
 }
 
 func detectBooks(files []File) bool {
-	return majorityExt(files, bookExts, 0.5)
+	return majorityCount(files, hasExt(bookExts), 0.5)
 }
 
-// majorityExt returns true if at least `threshold` of the files (by count)
-// have an extension in `set`. Threshold is a fraction in [0, 1]. Suitable
-// for album-shaped categories where every file is meaningful and roughly
-// the same size (Music, Books, Software install bundles, .nsp game dumps).
-// For one-large-file-with-companions shapes (Movies), use majorityBytes.
-func majorityExt(files []File, set map[string]struct{}, threshold float64) bool {
+// IsVideo reports whether f looks like a video file: known video extension
+// OR a MimeType with "video/" prefix. Exposed so callers that need the same
+// content-type judgement Classify uses internally — typically to make a
+// fallback decision for files that landed in CategoryOther — don't have to
+// keep their own MIME / extension table.
+func IsVideo(f File) bool {
+	if _, ok := videoExts[strings.ToLower(filepath.Ext(f.RelativePath))]; ok {
+		return true
+	}
+	return strings.HasPrefix(f.MimeType, "video/")
+}
+
+// IsAudio is the audio counterpart to IsVideo.
+func IsAudio(f File) bool {
+	if _, ok := audioExts[strings.ToLower(filepath.Ext(f.RelativePath))]; ok {
+		return true
+	}
+	return strings.HasPrefix(f.MimeType, "audio/")
+}
+
+// hasExt is the predicate factory for categories without a meaningful MIME
+// signal (Games, Software, Books). The result has the same shape as IsVideo
+// / IsAudio so the majority helpers are uniform across all detectors.
+func hasExt(set map[string]struct{}) func(File) bool {
+	return func(f File) bool {
+		_, ok := set[strings.ToLower(filepath.Ext(f.RelativePath))]
+		return ok
+	}
+}
+
+// majorityCount returns true if at least `threshold` of the files (by count)
+// satisfy `pred`. Threshold is a fraction in [0, 1]. Suitable for album-
+// shaped categories where every file is meaningful and roughly the same
+// size (Music, Books, Software install bundles, .nsp game dumps). For one-
+// large-file-with-companions shapes (Movies), use majorityBytes.
+func majorityCount(files []File, pred func(File) bool, threshold float64) bool {
 	if len(files) == 0 {
 		return false
 	}
 	hit := 0
 	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f.RelativePath))
-		if _, ok := set[ext]; ok {
+		if pred(f) {
 			hit++
 		}
 	}
 	return float64(hit)/float64(len(files)) >= threshold
 }
 
-// majorityBytes is the size-weighted equivalent of majorityExt: returns true
-// when files matching `set` account for at least `threshold` of total bytes.
+// majorityBytes is the size-weighted equivalent of majorityCount: returns true
+// when files satisfying `pred` account for at least `threshold` of total bytes.
 // Used for Movies, which ship as one large video plus many small companion
 // files (.nfo, .srt, samples, screens) where count-based majority misclassifies.
 // Files with non-positive SizeBytes contribute neither to the numerator nor
 // the denominator so callers passing placeholder zero-size entries get the
 // same behaviour as if they hadn't passed them.
-func majorityBytes(files []File, set map[string]struct{}, threshold float64) bool {
+func majorityBytes(files []File, pred func(File) bool, threshold float64) bool {
 	var total, hit int64
 	for _, f := range files {
 		if f.SizeBytes <= 0 {
 			continue
 		}
 		total += f.SizeBytes
-		ext := strings.ToLower(filepath.Ext(f.RelativePath))
-		if _, ok := set[ext]; ok {
+		if pred(f) {
 			hit += f.SizeBytes
 		}
 	}
