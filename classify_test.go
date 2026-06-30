@@ -104,6 +104,97 @@ func TestClassifyTVBeatsMovieYearConfusion(t *testing.T) {
 	}
 }
 
+func TestClassifyTVBareSeasonPack(t *testing.T) {
+	res := Classify("Widow's Bay (2026) S01 (1080p ATV WEB-DL x265 10bit EAC3 Atmos 5.1 Ghost)", []File{
+		{RelativePath: "S01E01.mkv", SizeBytes: 2e9},
+		{RelativePath: "S01E02.mkv", SizeBytes: 2e9},
+	})
+	if res.Category != CategoryTV {
+		t.Fatalf("category = %q, want tv (bare S01 must trigger TV)", res.Category)
+	}
+	if res.Show != "Widow's Bay" {
+		t.Errorf("show = %q, want %q", res.Show, "Widow's Bay")
+	}
+	if res.Year != "2026" {
+		t.Errorf("year = %q, want 2026", res.Year)
+	}
+}
+
+func TestClassifyTVBareSeasonNoYear(t *testing.T) {
+	res := Classify("Some.Show.S02.Complete.720p.WEB-DL", []File{
+		{RelativePath: "ep1.mkv", SizeBytes: 1},
+	})
+	if res.Category != CategoryTV {
+		t.Fatalf("category = %q, want tv", res.Category)
+	}
+	if res.Show != "Some Show" {
+		t.Errorf("show = %q, want %q", res.Show, "Some Show")
+	}
+}
+
+func TestClassifyTVMultiFileEpisodeMarkers(t *testing.T) {
+	res := Classify("death-parade_1080p_2015", []File{
+		{RelativePath: "Death Parade - 01.mkv", SizeBytes: 500e6},
+		{RelativePath: "Death Parade - 02.mkv", SizeBytes: 500e6},
+		{RelativePath: "Death Parade - 03.mkv", SizeBytes: 500e6},
+		{RelativePath: "Death Parade - 04.mkv", SizeBytes: 500e6},
+	})
+	if res.Category != CategoryTV {
+		t.Fatalf("category = %q, want tv (episode markers in filenames)", res.Category)
+	}
+	if res.Year != "2015" {
+		t.Errorf("year = %q, want 2015", res.Year)
+	}
+}
+
+func TestClassifyTVMultiFileSimilarSizes(t *testing.T) {
+	res := Classify("some_show_720p_2020", []File{
+		{RelativePath: "01.mkv", SizeBytes: 400e6},
+		{RelativePath: "02.mkv", SizeBytes: 420e6},
+		{RelativePath: "03.mkv", SizeBytes: 410e6},
+	})
+	if res.Category != CategoryTV {
+		t.Fatalf("category = %q, want tv (3+ similar-sized video files)", res.Category)
+	}
+}
+
+func TestClassifyMovieBundleDifferentYears(t *testing.T) {
+	res := Classify("Best Action Movies", []File{
+		{RelativePath: "Die Hard 1988.mkv", SizeBytes: 2e9},
+		{RelativePath: "Mad Max 2015.mkv", SizeBytes: 2e9},
+		{RelativePath: "John Wick 2014.mkv", SizeBytes: 2e9},
+	})
+	if res.Category == CategoryTV {
+		t.Fatalf("category = tv, want anything else (different years = movie bundle)")
+	}
+}
+
+func TestClassifyMovieWithExtrasNotTV(t *testing.T) {
+	res := Classify("Great Movie 2020", []File{
+		{RelativePath: "Great.Movie.2020.mkv", SizeBytes: 10e9},
+		{RelativePath: "sample.mkv", SizeBytes: 50e6},
+		{RelativePath: "featurette.mkv", SizeBytes: 200e6},
+		{RelativePath: "deleted-scenes.mkv", SizeBytes: 150e6},
+	})
+	if res.Category == CategoryTV {
+		t.Fatalf("category = tv, want movies (one big file + small extras)")
+	}
+	if res.Category != CategoryMovies {
+		t.Fatalf("category = %q, want movies", res.Category)
+	}
+}
+
+func TestClassifyTVMultiFileNoSizeData(t *testing.T) {
+	res := Classify("some_anime_2019", []File{
+		{RelativePath: "ep01.mkv", SizeBytes: 0},
+		{RelativePath: "ep02.mkv", SizeBytes: 0},
+		{RelativePath: "ep03.mkv", SizeBytes: 0},
+	})
+	if res.Category != CategoryTV {
+		t.Fatalf("category = %q, want tv (no sizes = assume episodes)", res.Category)
+	}
+}
+
 func TestClassifyMovieMultiFile(t *testing.T) {
 	// Multi-file movie (feature + sample + subs). Majority of files are
 	// video, so movie detection still fires.

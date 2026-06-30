@@ -56,10 +56,20 @@ type Result struct {
 }
 
 var (
-	// TV-show detectors. First-match-wins across these three.
-	reTVSE      = regexp.MustCompile(`(?i)\bS(\d{1,2})E(\d{1,3})\b`)
-	reTVSeason  = regexp.MustCompile(`(?i)\bSeason\s+(\d+)\b`)
-	reTVNumXNum = regexp.MustCompile(`\b(\d{1,2})x(\d{1,2})\b`)
+	// TV-show detectors. First-match-wins across these four.
+	reTVSE         = regexp.MustCompile(`(?i)\bS(\d{1,2})E(\d{1,3})\b`)
+	reTVSeason     = regexp.MustCompile(`(?i)\bSeason\s+(\d+)\b`)
+	reTVSeasonOnly = regexp.MustCompile(`(?i)\bS(\d{1,2})\b`)
+	reTVNumXNum    = regexp.MustCompile(`\b(\d{1,2})x(\d{1,2})\b`)
+
+	// Episode markers in filenames (fallback when the torrent name has none).
+	reFileEpisode = regexp.MustCompile(
+		`(?i)(?:` +
+			`\bS\d{1,2}E\d{1,3}\b` +
+			`|\bE(?:p(?:isode)?)?\s*\d{1,3}\b` +
+			`|\b\d{1,2}x\d{1,2}\b` +
+			`|\s-\s+\d{1,3}\b` +
+			`)`)
 
 	// Year in the sanitized name (used for movies + TV year stripping).
 	reYearAny = regexp.MustCompile(`\b(19|20)\d{2}\b`)
@@ -101,7 +111,7 @@ func Classify(name string, files []File) Result {
 	sanitized := Sanitize(name)
 	res := Result{SanitizedName: sanitized, Category: CategoryOther}
 
-	if show, year, ok := detectTV(sanitized); ok {
+	if show, year, ok := detectTV(sanitized, files); ok {
 		res.Category = CategoryTV
 		res.Show = show
 		res.Year = year
@@ -136,21 +146,110 @@ func Classify(name string, files []File) Result {
 	return res
 }
 
-// detectTV matches any of the three TV-show forms and returns the show name
-// (year stripped) plus optional year. "The.Office.2005.S01E05.HDTV" -> show
-// "The Office", year "2005". "The.Office.S01E05.HDTV" -> show "The Office",
-// year "".
-func detectTV(sanitized string) (show, year string, ok bool) {
+// detectTV matches TV-show name patterns and returns the show name (year
+// stripped) plus optional year. "The.Office.2005.S01E05.HDTV" -> show
+// "The Office", year "2005". When the torrent name carries no explicit
+// marker but the file list looks like a multi-episode bundle, the fallback
+// heuristic claims it as TV so it doesn't fall through to Movies.
+func detectTV(sanitized string, files []File) (show, year string, ok bool) {
 	loc := firstTVMatch(sanitized)
-	if loc == nil {
+	if loc != nil {
+		show = strings.TrimSpace(sanitized[:loc[0]])
+		if m := reYearAny.FindStringIndex(show); m != nil && m[1] == len(show) {
+			year = show[m[0]:m[1]]
+			show = strings.TrimSpace(show[:m[0]])
+		}
+		return show, year, true
+	}
+
+	if !looksLikeEpisodeBundle(files) {
 		return "", "", false
 	}
-	show = strings.TrimSpace(sanitized[:loc[0]])
-	if m := reYearAny.FindStringIndex(show); m != nil && m[1] == len(show) {
-		year = show[m[0]:m[1]]
-		show = strings.TrimSpace(show[:m[0]])
+	show = sanitized
+	if m := reYearAny.FindStringIndex(sanitized); m != nil {
+		year = sanitized[m[0]:m[1]]
+		show = strings.TrimSpace(sanitized[:m[0]])
 	}
 	return show, year, true
+}
+
+// looksLikeEpisodeBundle decides whether the file list alone (no name
+// markers) looks like a TV season pack rather than a movie or movie bundle.
+func looksLikeEpisodeBundle(files []File) bool {
+	vids := collectVideo(files)
+	if len(vids) < 3 {
+		return false
+	}
+	if looksLikeMovieBundle(vids) {
+		return false
+	}
+	if hasEpisodeMarkers(vids) {
+		return true
+	}
+	if !episodeSized(vids) {
+		return false
+	}
+	return true
+}
+
+// looksLikeMovieBundle returns true when video filenames carry multiple
+// distinct years, the hallmark of a movie collection torrent.
+func looksLikeMovieBundle(vids []File) bool {
+	years := make(map[string]struct{})
+	for _, f := range vids {
+		if m := reYearAny.FindString(filepath.Base(f.RelativePath)); m != "" {
+			years[m] = struct{}{}
+		}
+	}
+	return len(years) >= 2
+}
+
+// hasEpisodeMarkers returns true when the majority of video filenames
+// contain a recognisable episode marker (S01E01, E03, Episode 5, 1x02,
+// or the anime-style "- 01").
+func hasEpisodeMarkers(vids []File) bool {
+	hits := 0
+	for _, f := range vids {
+		if reFileEpisode.MatchString(filepath.Base(f.RelativePath)) {
+			hits++
+		}
+	}
+	return float64(hits)/float64(len(vids)) >= 0.5
+}
+
+// episodeSized returns true when the video files are roughly the same size
+// (largest ≤ 3× smallest), which is typical for episodes. Returns true when
+// no size data is available so callers without sizes fall through to the
+// default. A single huge file with tiny companions (movie + extras) fails.
+func episodeSized(vids []File) bool {
+	var min, max int64
+	set := false
+	for _, f := range vids {
+		if f.SizeBytes <= 0 {
+			continue
+		}
+		if !set || f.SizeBytes < min {
+			min = f.SizeBytes
+		}
+		if f.SizeBytes > max {
+			max = f.SizeBytes
+		}
+		set = true
+	}
+	if !set {
+		return true
+	}
+	return max <= min*3
+}
+
+func collectVideo(files []File) []File {
+	var out []File
+	for _, f := range files {
+		if IsVideo(f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // firstTVMatch returns the location of the earliest TV pattern in s, or nil.
@@ -158,7 +257,7 @@ func detectTV(sanitized string) (show, year string, ok bool) {
 // an oddball name still fires on the earliest marker.
 func firstTVMatch(s string) []int {
 	best := []int{-1, -1}
-	for _, re := range []*regexp.Regexp{reTVSE, reTVSeason, reTVNumXNum} {
+	for _, re := range []*regexp.Regexp{reTVSE, reTVSeason, reTVSeasonOnly, reTVNumXNum} {
 		m := re.FindStringIndex(s)
 		if m == nil {
 			continue
